@@ -407,7 +407,7 @@ var I18N={
   paused:"Paused", loadShared:"Loading shared track…", sharedTap:"Tap the box to play “{0}”",
   noRes:"No results for “{0}” — try another search", searching:"Searching “{0}”…",
   trackNo:"Track {0} of {1}", shareHead:"Listen on TapePro easylandx.github.io/tapepro", copied:"Message copied — press Ctrl+V in WhatsApp",copiedImg:"Image copied — choose a chat, then press Ctrl+V to add it",
-   install:"Install App", iosHint:"To install: tap Share, then “Add to Home Screen”."
+   install:"Install App", iosHint:"To install: tap Share, then “Add to Home Screen”.", sharedPlay:"Press play to listen to “{0}”"
  },
  es:{
   device:"Reproductor de casetes", panel:"Reproduciendo ahora", rew:"Rebobinar", fwd:"Avanzar rápido", prev:"Pista anterior", play:"Reproducir", pause:"Pausa",
@@ -419,7 +419,7 @@ var I18N={
   paused:"En pausa", loadShared:"Cargando la pista compartida…", sharedTap:"Toca la caja para escuchar “{0}”",
   noRes:"Sin resultados para “{0}”: prueba con otra búsqueda", searching:"Buscando “{0}”…",
   trackNo:"Pista {0} de {1}", shareHead:"Escucha en TapePro easylandx.github.io/tapepro", copied:"Mensaje copiado: pulsa Ctrl+V en WhatsApp",copiedImg:"Imagen copiada: elige un chat y pulsa Ctrl+V para añadirla",
-   install:"Instalar app", iosHint:"Para instalar: toca Compartir y luego «Añadir a pantalla de inicio»."
+   install:"Instalar app", iosHint:"Para instalar: toca Compartir y luego «Añadir a pantalla de inicio».", sharedPlay:"Pulsa play para escuchar “{0}”"
  }
 };
 var lang="en";
@@ -616,6 +616,7 @@ function setPlaying(p){
 audio.addEventListener("playing",function(){
   if(state===2 && hasTrack){
     if(audio.crossOrigin==="anonymous") ensureAnalyser();
+    if(audio.src&&audio.src.indexOf("data:")!==0) pendingShare=false;
     setPlaying(true);
   }
 });
@@ -767,7 +768,7 @@ function playIndex(i){
   (function go(){
     return startTrack(my).catch(function(e){
       if(my!==token) return;
-      if(e&&e.name==="NotAllowedError"){ loading=false; setK("press","","",false); return; }
+      if(e&&e.name==="NotAllowedError"){ loading=false; if(pendingShare&&album&&album.files[idx]) setK("sharedPlay",album.files[idx].title,album.title,false); else setK("press","","",false); return; }
       if(++tries<3 && idx+1<album.files.length){ idx++; return go(); }
       loadRandomTrack();
     });
@@ -842,7 +843,8 @@ function onDeviceTap(){
     startShared();
   }else{
     sfxBtn();
-    loadRandomTrack();                      // new random track (stops the current one)
+    if(pendingShare&&album&&!sharedLoading) startShared();   // shared link: first tap plays the shared track
+    else loadRandomTrack();                 // new random track (stops the current one)
   }
 }
 device.addEventListener("click",onDeviceTap);
@@ -851,6 +853,7 @@ device.addEventListener("keydown",function(e){ if(e.key==="Enter"||e.key===" "){
 btnPlay.addEventListener("click",function(){
   sfxBtn();
   if(state!==2) return;
+  if(pendingShare&&album&&!sharedLoading){ unlockAudio(); startShared(); return; }
   if(hasTrack && audio.paused && audio.src && audio.src.indexOf("data:")!==0 && !audio.ended && audio.readyState>0){
     var p=audio.play(); if(p&&p.catch) p.catch(function(){loadRandomTrack()});
   }else if(!isPlaying()){
@@ -942,15 +945,17 @@ var pendingShare=false, sharedLoading=false, wantShared=false, sharedIdx=0;
   if(!id) return;
   if(!(n>=0)) n=0;
   pendingShare=true; sharedLoading=true;
+  // open straight on the powered-on cassette player (photo 3), no box
+  state=2; device.setAttribute("data-state","2"); activate();
+  setK("loadShared","","",true);
   albumFromItem({identifier:id,title:id}).then(function(a){
     sharedLoading=false;
     sharedIdx=Math.min(n,a.files.length-1);
-    if(state===2&&wantShared){ album=a; idx=sharedIdx; pendingShare=false; wantShared=false; playIndex(idx); return; }
     album=a; idx=sharedIdx; updateInfo();
-    if(state===0) setK("sharedTap",a.files[idx].title,"",false);
+    playIndex(idx);          // try to autoplay; if the browser blocks it, the first tap/play starts this track
   }).catch(function(){
     sharedLoading=false; pendingShare=false;
-    if(state===2&&wantShared){ wantShared=false; loadRandomTrack(); }
+    loadRandomTrack();
   });
 })();
 function startShared(){
